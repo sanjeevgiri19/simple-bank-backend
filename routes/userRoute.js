@@ -5,13 +5,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("../middleware.js/auth");
 
-// 📌 Helper - Password validation
+// Helper - Password validation
 function isValidPassword(password) {
   const regex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/;
   return regex.test(password);
 }
 
-// 📌 Calculate age
+// Calculate age
 function calculateAge(dobStr) {
   const dob = new Date(dobStr);
   const diff = Date.now() - dob.getTime();
@@ -19,7 +19,7 @@ function calculateAge(dobStr) {
   return age;
 }
 
-// ✅ Register
+// Register
 router.post("/register", async (req, res) => {
   try {
     const { name, phone, password, dob, pin } = req.body;
@@ -33,11 +33,9 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ msg: "Must be 18 years or older" });
 
     if (!isValidPassword(password)) {
-      return res
-        .status(400)
-        .json({
-          msg: "Password must be 8+ characters, include uppercase, number, and symbol.",
-        });
+      return res.status(400).json({
+        msg: "Password must be 8+ characters, include uppercase, number, and symbol.",
+      });
     }
 
     const existingUser = await User.findOne({ phone });
@@ -63,7 +61,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// ✅ Login
+//  Login
 router.post("/login", async (req, res) => {
   const { phone, password } = req.body;
   const user = await User.findOne({ phone });
@@ -76,134 +74,219 @@ router.post("/login", async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "2h",
   });
-  res.json({ token, username: user.name });
+  res.json({ token, username: user.name, phone: user.phone });
 });
 
-// ✅ Get Balance
+// Get Balance
 router.get("/balance", auth, async (req, res) => {
   const user = await User.findById(req.user.id);
   res.json({ balance: user.balance });
 });
 
-// ✅ Deposit
+//  Deposit (no PIN; records transaction)
 router.post("/deposit", auth, async (req, res) => {
   const { amount } = req.body;
-  if (amount < 10 || amount > 50000)
+  const amt = Number(amount);
+  if (!amt || amt < 10 || amt > 50000)
     return res.status(400).json({ msg: "Deposit must be ₹10 to ₹50,000" });
 
   const user = await User.findById(req.user.id);
-  user.balance += amount;
+  user.balance += amt;
+
+  user.transactions.push({
+    type: "deposit",
+    amount: amt,
+    details: `Deposited ₹${amt}`,
+    balanceAfter: user.balance,
+  });
+
   await user.save();
 
-  res.json({ msg: `Deposited ₹${amount}`, balance: user.balance });
+  res.json({ msg: `Deposited ₹${amt}`, balance: user.balance });
 });
 
-// ✅ Withdraw
+//  Withdraw (requires PIN; min 10, max 25000; records transaction)
 router.post("/withdraw", auth, async (req, res) => {
   const { amount, pin } = req.body;
-  if (amount < 10 || amount > 25000)
+  const amt = Number(amount);
+  if (!amt || amt < 10 || amt > 25000)
     return res.status(400).json({ msg: "Withdraw must be ₹10 to ₹25,000" });
 
   const user = await User.findById(req.user.id);
-  const pinMatch = await bcrypt.compare(pin, user.pin);
+  const pinMatch = await bcrypt.compare(pin || "", user.pin);
   if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
 
-  if (user.balance < amount)
+  if (user.balance < amt)
     return res.status(400).json({ msg: "Insufficient balance" });
 
-  user.balance -= amount;
+  user.balance -= amt;
+
+  user.transactions.push({
+    type: "withdraw",
+    amount: amt,
+    details: `Withdrawn ₹${amt}`,
+    balanceAfter: user.balance,
+  });
+
   await user.save();
 
-  res.json({ msg: `Withdrawn ₹${amount}`, balance: user.balance });
+  res.json({ msg: `Withdrawn ₹${amt}`, balance: user.balance });
 });
 
-// ✅ Transfer
+//  Transfer (requires PIN; charges for different bank; records for both users)
 router.post("/transfer", auth, async (req, res) => {
   const { phone, amount, pin, bankType } = req.body;
+  const amt = Number(amount);
 
   const sender = await User.findById(req.user.id);
   const receiver = await User.findOne({ phone });
   if (!receiver) return res.status(404).json({ msg: "Recipient not found" });
 
-  const pinMatch = await bcrypt.compare(pin, sender.pin);
+  const pinMatch = await bcrypt.compare(pin || "", sender.pin);
   if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
 
   let charge = bankType === "different" ? 11 : 0;
-  const total = amount + charge;
+  const total = amt + charge;
+
+  if (!amt || amt < 10 || amt > 25000) {
+    return res
+      .status(400)
+      .json({ msg: "Transfer amount must be ₹10 to ₹25,000" });
+  }
 
   if (sender.balance < total)
     return res.status(400).json({ msg: "Insufficient balance" });
 
+  // Perform transfer
   sender.balance -= total;
-  receiver.balance += amount;
+  receiver.balance += amt;
+
+  sender.transactions.push({
+    type: "transfer-out",
+    amount: amt,
+    details: `To ${phone}${charge ? ` (₹${charge} fee)` : ""}`,
+    balanceAfter: sender.balance,
+  });
+
+  receiver.transactions.push({
+    type: "transfer-in",
+    amount: amt,
+    details: `From ${sender.phone}`,
+    balanceAfter: receiver.balance,
+  });
 
   await sender.save();
   await receiver.save();
 
   res.json({
-    msg: `Transferred ₹${amount} to ${phone}${
+    msg: `Transferred ₹${amt} to ${phone}${
       charge ? ` (₹${charge} charge)` : ""
     }`,
     balance: sender.balance,
   });
 });
 
-// ✅ Top-Up
+// Top-Up (requires PIN; records transaction)
 router.post("/topup", auth, async (req, res) => {
   const { phone, amount, pin } = req.body;
+  const amt = Number(amount);
+
   const user = await User.findById(req.user.id);
-  const pinMatch = await bcrypt.compare(pin, user.pin);
+  const pinMatch = await bcrypt.compare(pin || "", user.pin);
   if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
 
-  if (user.balance < amount)
+  if (!amt || amt < 10)
+    return res.status(400).json({ msg: "Minimum top-up is ₹10" });
+  if (user.balance < amt)
     return res.status(400).json({ msg: "Insufficient balance" });
 
-  user.balance -= amount;
+  user.balance -= amt;
+
+  user.transactions.push({
+    type: "topup",
+    amount: amt,
+    details: `Mobile top-up to ${phone}`,
+    balanceAfter: user.balance,
+  });
+
   await user.save();
 
-  res.json({ msg: `Topped up ₹${amount} to ${phone}`, balance: user.balance });
+  res.json({ msg: `Topped up ₹${amt} to ${phone}`, balance: user.balance });
 });
 
-// ✅ Load eSewa
+// Load eSewa (requires PIN; records transaction)
 router.post("/esewa", auth, async (req, res) => {
   const { id, amount, pin } = req.body;
+  const amt = Number(amount);
+
   const user = await User.findById(req.user.id);
-  const pinMatch = await bcrypt.compare(pin, user.pin);
+  const pinMatch = await bcrypt.compare(pin || "", user.pin);
   if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
 
-  if (user.balance < amount)
+  if (!amt || amt < 10)
+    return res.status(400).json({ msg: "Minimum load is ₹10" });
+  if (user.balance < amt)
     return res.status(400).json({ msg: "Insufficient balance" });
 
-  user.balance -= amount;
+  user.balance -= amt;
+
+  user.transactions.push({
+    type: "esewa",
+    amount: amt,
+    details: `Loaded to eSewa ID ${id}`,
+    balanceAfter: user.balance,
+  });
+
   await user.save();
 
   res.json({
-    msg: `Loaded ₹${amount} to eSewa ID ${id}`,
+    msg: `Loaded ₹${amt} to eSewa ID ${id}`,
     balance: user.balance,
   });
 });
 
-// ✅ Change Password
+//  Change Password
 router.post("/change-password", auth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user.id);
 
-  const isMatch = await bcrypt.compare(oldPassword, user.password);
+  const isMatch = await bcrypt.compare(oldPassword || "", user.password);
   if (!isMatch)
     return res.status(400).json({ msg: "Incorrect current password" });
 
   if (!isValidPassword(newPassword)) {
-    return res
-      .status(400)
-      .json({
-        msg: "New password is weak. Use uppercase, number, symbol etc.",
-      });
+    return res.status(400).json({
+      msg: "New password is weak. Use uppercase, number, symbol etc.",
+    });
   }
 
   user.password = await bcrypt.hash(newPassword, 10);
   await user.save();
 
   res.json({ msg: "Password changed successfully" });
+});
+
+//  Get profile (auth protected; returns public fields)
+router.get("/profile", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password -pin");
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
+//  Get transaction history (auth protected; newest first)
+router.get("/transactions", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("transactions");
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    const list = [...user.transactions].reverse();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
 });
 
 module.exports = router;
