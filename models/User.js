@@ -10,4 +10,11 @@ const userSchema = new mongoose.Schema({
   balance: { type: Number, default: 100 },
 });
 
+// Remove any existing indexes
+userSchema.indexes().forEach((index) => {
+  if (index[0].email) {
+    mongoose.model("User").collection.dropIndex("email_1");
+  }
+});
+
 module.exports = mongoose.model("User", userSchema);
