@@ -42,14 +42,14 @@ router.post("/register", async (req, res) => {
     if (existingUser)
       return res.status(400).json({ msg: "Phone already registered" });
 
-    const hashedPass = await bcrypt.hash(password, 10);
-    const hashedPin = await bcrypt.hash(pin, 10);
+    // const hashedPass = await bcrypt.hash(password, 10);
+    // const hashedPin = await bcrypt.hash(pin, 10);
 
     const user = new User({
       name,
       phone,
-      password: hashedPass,
-      pin: hashedPin,
+      password,
+      pin,
       dob,
       age,
     });
@@ -77,11 +77,16 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ msg: "User does not exist" });
     }
 
-    // Validate password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    //  no bcrypt, just compare directly
+    if (user.password !== password) {
       return res.status(400).json({ msg: "Invalid credentials" });
     }
+
+    // Validate password
+    // const isMatch = await bcrypt.compare(password, user.password);
+    // if (!isMatch) {
+    //   return res.status(400).json({ msg: "Invalid credentials" });
+    // }
 
     // Create token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
@@ -272,10 +277,15 @@ router.post("/esewa", auth, async (req, res) => {
 router.post("/change-password", auth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const user = await User.findById(req.user.id);
-
-  const isMatch = await bcrypt.compare(oldPassword || "", user.password);
-  if (!isMatch)
+ 
+  // direct compare
+  if (user.password !== oldPassword) {
     return res.status(400).json({ msg: "Incorrect current password" });
+  }
+
+  // const isMatch = await bcrypt.compare(oldPassword || "", user.password);
+  // if (!isMatch)
+  //   return res.status(400).json({ msg: "Incorrect current password" });
 
   if (!isValidPassword(newPassword)) {
     return res.status(400).json({
@@ -283,7 +293,8 @@ router.post("/change-password", auth, async (req, res) => {
     });
   }
 
-  user.password = await bcrypt.hash(newPassword, 10);
+  // user.password = await bcrypt.hash(newPassword, 10);
+  user.password = newPassword;
   await user.save();
 
   res.json({ msg: "Password changed successfully" });
