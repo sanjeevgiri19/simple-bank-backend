@@ -63,18 +63,41 @@ router.post("/register", async (req, res) => {
 
 //  Login
 router.post("/login", async (req, res) => {
-  const { phone, password } = req.body;
-  const user = await User.findOne({ phone });
-  if (!user) return res.status(400).json({ msg: "Invalid phone or password" });
+  try {
+    const { phone, password } = req.body;
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch)
-    return res.status(400).json({ msg: "Invalid phone or password" });
+    // Validate input
+    if (!phone || !password) {
+      return res.status(400).json({ msg: "Please enter all fields" });
+    }
 
-  const token = jwt.sign({ id: user._id }, supersecretkey, {
-    expiresIn: "2h",
-  });
-  res.json({ token, username: user.name, phone: user.phone });
+    // Find user
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(400).json({ msg: "User does not exist" });
+    }
+
+    // Validate password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Invalid credentials" });
+    }
+
+    // Create token
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "1d",
+    });
+
+    // Send response
+    res.json({
+      token,
+      name: user.name,
+      phone: user.phone,
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ msg: "Server error", error: err.message });
+  }
 });
 
 // Get Balance
