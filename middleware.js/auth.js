@@ -7,7 +7,7 @@ function auth(req, res, next) {
 
   try {
     const token = tokenHeader.replace("Bearer ", "");
-    const decoded = jwt.verify(token, supersecretkey);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch {
