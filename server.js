@@ -14,7 +14,7 @@ const PORT=5000
 
 mongoose
   .connect(
-    "mongodb+srv://bank:bankapp@cluster0.1fnvwkh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    "mongodb+srv://projectbank_db_user:ClfwhRT3svMumg7y@cluster0.kqlv90f.mongodb.net/?appName=Cluster0"
   )
   .then(() => {
     console.log("MongoDB connected");
