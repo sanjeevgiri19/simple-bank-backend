@@ -134,32 +134,74 @@ router.post("/deposit", auth, async (req, res) => {
 });
 
 //  Withdraw (requires PIN; min 10, max 25000; records transaction)
+// router.post("/withdraw", auth, async (req, res) => {
+//   const { amount, pin } = req.body;
+//   const amt = Number(amount);
+//   if (!amt || amt < 10 || amt > 25000)
+//     return res.status(400).json({ msg: "Withdraw must be ₹10 to ₹25,000" });
+
+//   const user = await User.findById(req.user.id);
+//   const pinMatch = await bcrypt.compare(pin || "", user.pin);
+//   if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
+
+//   if (user.balance < amt)
+//     return res.status(400).json({ msg: "Insufficient balance" });
+
+//   user.balance -= amt;
+
+//   user.transactions.push({
+//     type: "withdraw",
+//     amount: amt,
+//     details: `Withdrawn ₹${amt}`,
+//     balanceAfter: user.balance,
+//   });
+
+//   await user.save();
+
+//   res.json({ msg: `Withdrawn ₹${amt}`, balance: user.balance });
+// });
+
+
+// ---------------- WITHDRAW ----------------
 router.post("/withdraw", auth, async (req, res) => {
-  const { amount, pin } = req.body;
-  const amt = Number(amount);
-  if (!amt || amt < 10 || amt > 25000)
-    return res.status(400).json({ msg: "Withdraw must be ₹10 to ₹25,000" });
+  try {
+    const { amount } = req.body;
+    let { pin } = req.body;
+    const amt = Number(amount);
 
-  const user = await User.findById(req.user.id);
-  const pinMatch = await bcrypt.compare(pin || "", user.pin);
-  if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
+    if (!amt || amt < 10 || amt > 25000)
+      return res.status(400).json({ msg: "Withdraw must be Rs.10 to RS.25,000" });
 
-  if (user.balance < amt)
-    return res.status(400).json({ msg: "Insufficient balance" });
+    // Get user and include pin explicitly (if schema has select:false)
+    const user = await User.findById(req.user.id).select("+pin");
+    if (!user) return res.status(404).json({ msg: "User not found" });
 
-  user.balance -= amt;
+    // Ensure pin is a string
+    pin = pin != null ? String(pin) : "";
+    if (!pin) return res.status(400).json({ msg: "PIN is required" });
 
-  user.transactions.push({
-    type: "withdraw",
-    amount: amt,
-    details: `Withdrawn ₹${amt}`,
-    balanceAfter: user.balance,
-  });
+    // Compare hashed PIN
+    const pinMatch = await bcrypt.compare(pin, user.pin);
+    if (!pinMatch) return res.status(400).json({ msg: "Invalid PIN" });
 
-  await user.save();
+    if (user.balance < amt) return res.status(400).json({ msg: "Insufficient balance" });
 
-  res.json({ msg: `Withdrawn ₹${amt}`, balance: user.balance });
+    user.balance -= amt;
+    user.transactions.push({
+      type: "withdraw",
+      amount: amt,
+      details: `Withdrawn ₹${amt}`,
+      balanceAfter: user.balance,
+    });
+
+    await user.save();
+    res.json({ msg: `Withdrawn ₹${amt}`, balance: user.balance });
+  } catch (err) {
+    console.error("Withdraw error:", err);
+    res.status(500).json({ msg: "Server error", err: err.message });
+  }
 });
+
 
 //  Transfer (requires PIN; charges for different bank; records for both users)
 router.post("/transfer", auth, async (req, res) => {
