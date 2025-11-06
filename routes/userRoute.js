@@ -19,40 +19,32 @@ function calculateAge(dobStr) {
   return age;
 }
 
-//register
+// Register
 router.post("/register", async (req, res) => {
   try {
     const { name, phone, password, dob, pin } = req.body;
 
-    // Check for empty fields
     if (!name || !phone || !password || !dob || !pin) {
       return res.status(400).json({ msg: "All fields are required" });
     }
 
-    // Verify phone number starts with 98 and is 10 digits
-    const phoneRegex = /^98\d{8}$/;
-    if (!phoneRegex.test(phone)) {
-      return res.status(400).json({ msg: "Phone number must start with 98 and be 10 digits" });
-    }
-
-    // Check age
     const age = calculateAge(dob);
     if (age < 18)
       return res.status(400).json({ msg: "Must be 18 years or older" });
 
-    // Validate password
     if (!isValidPassword(password)) {
       return res.status(400).json({
         msg: "Password must be 8+ characters, include uppercase, number, and symbol.",
       });
     }
 
-    // Check if phone is already registered
     const existingUser = await User.findOne({ phone });
     if (existingUser)
       return res.status(400).json({ msg: "Phone already registered" });
 
-    // Create new user
+    // const hashedPass = await bcrypt.hash(password, 10);
+    // const hashedPin = await bcrypt.hash(pin, 10);
+
     const user = new User({
       name,
       phone,
@@ -68,7 +60,6 @@ router.post("/register", async (req, res) => {
     res.status(500).json({ msg: "Server error", err });
   }
 });
-
 
 //  Login
 router.post("/login", async (req, res) => {
