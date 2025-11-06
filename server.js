@@ -14,7 +14,7 @@ const PORT=5000
 
 mongoose
   .connect(
-    "mongodb+srv://subekshyasapkota686_db_user:utUGQO3tYrvgFCW6@bank.nt6ah60.mongodb.net/?appName=Bank"
+    "mongodb+srv://girisanjib191_db_user:2gvBzXgR4jy7L5VA@clusterwow.axae718.mongodb.net/?appName=Clusterwow"
   )
   .then(() => {
     console.log("MongoDB connected");
